@@ -150,4 +150,3 @@ plt.xlabel('Data')
 plt.savefig("WeightCacheDist.png")
 
 #model_export(model, 'out440k_shifted_3x_25/model_qint80.bin', version=2)
-model_export(model, 'out440k_shifted_3x_25/model_mcu.bin', version=3)
