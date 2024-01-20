@@ -17,8 +17,9 @@
 #endif
 // ----------------------------------------------------------------------------
 // Globals
-int GS = 0; // group size global for quantization of the weights
+int GS = 64; // group size global for quantization of the weights
 float KV_CACHE_SCALE = 8.0f/127.0f; // magic number for now... QuantizeTensor errors
+int32_t XOUT_STAT = 0;
 // ----------------------------------------------------------------------------
 // Transformer model
 
@@ -369,9 +370,11 @@ void matmul(float* xout, QuantizedTensor *x, QuantizedTensor *w, int n, int d) {
         int j;
         for (j = 0; j <= n - GS; j += GS) {
             for (int k = 0; k < GS; k++) {
-                ival += ((int32_t) x->q[j + k]) * ((int32_t) w->q[in + j + k]);
+                // round properly when doing int4 or you will suffer...
+                ival += ((int32_t) x->q[j + k]) * ((int32_t) ((w->q[in + j + k])>>4) + ((w->q[in + j + k]>>3)&1));
             }
-            val += ((float) ival) * w->s[(in + j) / GS] * x->s[j / GS];
+            if (abs(ival) > XOUT_STAT) XOUT_STAT = abs(ival);
+            val += ((float) ival) * x->s[j / GS] * w->s[(in + j) / GS]*16;
             ival = 0;
         }
 
@@ -1144,6 +1147,7 @@ int main(int argc, char *argv[]) {
         error_usage();
     }
 
+    /*
     printf("dim: %d\n", transformer.config.dim);
     printf("hidden_dim: %d\n", transformer.config.hidden_dim);
     printf("n_layers: %d\n", transformer.config.n_layers);
@@ -1153,11 +1157,14 @@ int main(int argc, char *argv[]) {
     printf("seq_len: %d\n", transformer.config.seq_len);
     printf("group_size: %d\n", GS);
     printf("kv_dim: %d\n", (transformer.config.dim * transformer.config.n_kv_heads) / transformer.config.n_heads);
+    */
     
     // memory and file handles cleanup
     free_sampler(&sampler);
     free_tokenizer(&tokenizer);
     free_transformer(&transformer);
+    printf("XOUT_MAX: %d\n", XOUT_STAT);
+    printf("dim: %d\n", transformer.config.dim);
     return 0;
 }
 #endif

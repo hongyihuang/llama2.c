@@ -17,8 +17,10 @@
 #endif
 // ----------------------------------------------------------------------------
 // Globals
-float KV_CACHE_SCALE = 5.0f/127.0f; // magic number for now... QuantizeTensor errors
+float KV_CACHE_SCALE = 8.0f/127.0f; // magic number for now... QuantizeTensor errors
 size_t SPARSECOUNT = 0; // track how many horrifying matmuls we saved from activation
+size_t TOTALCOUNT = 0; // total matmul count
+int32_t XOUT_STAT = 0;
 // ----------------------------------------------------------------------------
 // Transformer model
 
@@ -33,7 +35,7 @@ typedef struct {
 } Config;
 
 typedef struct {
-    int8_t* q;    // quantized values
+    int8_t* q;  // quantized values
     float s; // scaling factor
 } QuantizedTensor;
 
@@ -339,10 +341,10 @@ void matmul_dense(float* xout, QuantizedTensor *x, QuantizedTensor *w, int n, in
 
         int j;
         for (j = 0; j <= n; j++) {
-            ival += ((int32_t) x->q[j]) * ((int32_t) w->q[in + j]);
+            ival += ((int32_t) x->q[j]) * ((int32_t) (w->q[in + j]>>4) + ((w->q[in + j]>>3)&1));
         }
 
-        xout[i] = ((float) ival) * w->s * x->s;;
+        xout[i] = ((float) ival) * w->s * x->s*16;
     }
 }
 
@@ -361,15 +363,21 @@ void matmul(float* xout, QuantizedTensor *x, QuantizedTensor *w, int n, int d) {
         int offset = i * d; 
         int32_t curr_x = x->q[i];
         // if input is 0, skip
-        if (curr_x!=0) {
+        if (curr_x != 0) {
             for (int j = 0; j <= d; j++) {
-                xout_int[j] += curr_x * ((int32_t) w->q[offset + j]);
+                // doesn't work without group quantization
+                xout_int[j] += ((curr_x>>2) + ((curr_x>>3)&1)) * (int32_t)(w->q[offset + j]>>0);// + ((w->q[offset + j]>>2)&1));
             }
         } else {
             SPARSECOUNT++;
         }
+        TOTALCOUNT++;
     }
-    for (int i = 0; i < d; i++) xout[i] = xout_int[i] * x->s * w->s;
+    for (int i = 0; i < d; i++) {
+        if (xout_int[i] > 32768 || xout_int[i] < -32768) printf("overflow in matmul\n");
+        if (abs(xout_int[i]) > XOUT_STAT) XOUT_STAT = abs(xout_int[i]);
+        xout[i] = xout_int[i] * x->s*4 * w->s;
+    }
 }
 
 float* forward(Transformer* transformer, int token, int pos) {
@@ -743,10 +751,10 @@ void generate(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler, 
         if (pos >= transformer->config.seq_len) { 
             //printf("\n");
             // (layer, seq_len, dim)
-            
+            // kv cache is actually shuffling invariant, so we can just rotate the RoPE
             for (int l = 0; l < transformer->config.n_layers; l++) {
                 int loff = l * transformer->config.seq_len * kv_dim;
-                for (int j = 0; j < transformer->config.seq_len-1; j++) {
+                for (int j = 1; j < transformer->config.seq_len-1; j++) {
                     // shift & rotate k, simply shift v
                     // RoPE relative positional encoding: complex-valued rotate q and k in each head
                     int8_t* from = transformer->state.key_cache + loff + (j+1)*kv_dim; 
@@ -804,7 +812,6 @@ void generate(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler, 
         long end = time_in_ms();
         fprintf(stderr, "achieved tok/s: %f\n", (pos-1) / (double)(end-start)*1000);
     }
-
 }
 
 // ----------------------------------------------------------------------------
@@ -890,7 +897,8 @@ int main(int argc, char *argv[]) {
     free_sampler(&sampler);
     free_tokenizer(&tokenizer);
     free_transformer(&transformer);
-    printf("Sparse elements: %ld\n", SPARSECOUNT);
+    printf("Sparse %%: %f\n", (float)SPARSECOUNT/TOTALCOUNT);
+    printf("XOUT_MAX: %d\n", XOUT_STAT);
     return 0;
 }
 #endif
