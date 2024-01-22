@@ -340,7 +340,7 @@ void matmul_dense(float* xout, QuantizedTensor *x, QuantizedTensor *w, int n, in
         int in = i * n;
 
         int j;
-        for (j = 0; j <= n; j++) {
+        for (j = 0; j < n; j++) {
             ival += ((int32_t) x->q[j]) * ((int32_t) (w->q[in + j]>>4) + ((w->q[in + j]>>3)&1));
         }
 
@@ -364,7 +364,7 @@ void matmul(float* xout, QuantizedTensor *x, QuantizedTensor *w, int n, int d) {
         int32_t curr_x = x->q[i];
         // if input is 0, skip
         if (curr_x != 0) {
-            for (int j = 0; j <= d; j++) {
+            for (int j = 0; j < d; j++) {
                 // doesn't work without group quantization
                 xout_int[j] += ((curr_x>>2) + ((curr_x>>3)&1)) * (int32_t)(w->q[offset + j]>>0);// + ((w->q[offset + j]>>2)&1));
             }
