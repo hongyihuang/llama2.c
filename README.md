@@ -17,10 +17,7 @@ This is not bad at all for a 260K sized model, sometimes it outputs nonsensical 
 ```
 $ ./runMCU ./out260k_shifted_3x_25/model_mcu.bin -n 1024 -z data/decode1024.tok
 
-Once upon a time, there was a lonely dog named Spot. 
-Spot loved to draw and run around outside with his toys. 
-One day, while Spot was playing, he found a big pool with 
-a little brave ball. Spot and Max were very excited. 
+Once upon a time, there was a lonely dog named Spot. Spot loved to draw and run around outside with his toys. One day, while Spot was playing, he found a big pool with a little brave ball. Spot and Max were very excited. 
 They wanted to play a fun
 achieved tok/s: 4500.000000
 ```

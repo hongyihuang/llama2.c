@@ -483,7 +483,6 @@ def hf_export(llama_model, filepath, group_size=64, dtype=torch.float32):
 # Load / import functions
 
 def load_checkpoint(checkpoint):
-
     # load the provided model checkpoint
     checkpoint_dict = torch.load(checkpoint, map_location='cpu')
     gptconf = ModelArgs(**checkpoint_dict['model_args'])
@@ -564,7 +563,6 @@ def load_meta_model(model_path):
     return model
 
 def load_hf_model(model_path):
-
     try:
         from transformers import AutoModelForCausalLM
     except ImportError:
