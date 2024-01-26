@@ -89,8 +89,9 @@ void safe_printf(char *piece) {
 }
 
 int main(int argc, char *argv[]) {
-    char *tokenizer_path = "data/tok1024.bin";
-    char *new_tok_path = "data/decode1024.tok";
+    char *tokenizer_path = "data/tok4096.bin";
+    char *new_tok_path = "data/decode4096.tok";
+    size_t vocab_size = 4096;
     char strbuf[16];
     int16_t header[2];
 
@@ -100,13 +101,13 @@ int main(int argc, char *argv[]) {
     Tokenizer tokenizer;
     int max = 0;
 
-    build_tokenizer(&tokenizer, tokenizer_path, 1024);
+    build_tokenizer(&tokenizer, tokenizer_path, 4096);
 
     header[0] = 16; // each token's char array is 16 chars long
-    header[1] = 1024; // tokens
+    header[1] = vocab_size; // tokens
     if (fwrite(header, sizeof(int16_t), 2, file) != 2) { fprintf(stderr, "failed write header\n"); exit(EXIT_FAILURE); }
 
-    for (int i = 0; i < 1024; i++) {
+    for (int i = 0; i < vocab_size; i++) {
         char* tok_str = decode(&tokenizer, 0, i);
 
         // from safe_printf
@@ -131,7 +132,7 @@ int main(int argc, char *argv[]) {
     file = fopen(new_tok_path, "r");
     if (fread(header, sizeof(int16_t), 2, file) != 2) { fprintf(stderr, "failed read header\n"); exit(EXIT_FAILURE); }
     printf("%d %d\n", header[0], header[1]);
-    for (int i = 0; i < 1024; i++) {
+    for (int i = 0; i < vocab_size; i++) {
         if (fread(strbuf, sizeof(char), 16, file) != 16) { fprintf(stderr, "failed read content\n"); exit(EXIT_FAILURE); }
         printf("%d | In file: %s | In tok: ", i, strbuf);
         safe_printf(decode(&tokenizer, 0, i));
