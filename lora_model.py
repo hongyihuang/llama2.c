@@ -8,9 +8,10 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
+import torch.utils.checkpoint
 
 INIT_DEVICE = 'meta'
-SHIFTED_RELU = 0
+SHIFTED_RELU = 1
 #SHIFTED_RELU_ATTN = 0
 #SHIFTED_RELU_FFN = 1
 
@@ -115,6 +116,8 @@ class Attention(nn.Module):
         self.dropout = args.dropout
 
         # use flash attention or a manual implementation?
+        # WARNING: FLASH DOESN'T WORK WITH <SM80
+        # Resolution: disable flash attention at top level with context manager
         self.flash = hasattr(torch.nn.functional, 'scaled_dot_product_attention')
         if not self.flash:
             print("WARNING: using slow attention. Flash Attention requires PyTorch >= 2.0")
@@ -179,8 +182,6 @@ class FeedForward(nn.Module):
         self.w1 = nn.Linear(dim, hidden_dim, bias=False, device=INIT_DEVICE)
         self.w2 = nn.Linear(hidden_dim, dim, bias=False, device=INIT_DEVICE)
         self.w3 = nn.Linear(dim, hidden_dim, bias=False, device=INIT_DEVICE)
-        #self.lora_d = nn.Linear(dim, 8, bias=False)
-        #self.lora_u = nn.Linear(8, hidden_dim, bias=False)
         self.dropout = nn.Dropout(dropout)
         
         self.count = 0
@@ -233,12 +234,16 @@ class TransformerBlock(nn.Module):
         self.ffn_count = 0
 
     def forward(self, x, freqs_cos, freqs_sin):
-        #attn_relu = F.relu(self.attention_norm(x) - SHIFTED_RELU)
+        # attn_relu = F.relu(self.attention_norm(x))
         attn_relu = self.attention_norm(x)
-        h = x + self.attention.forward(attn_relu, freqs_cos, freqs_sin)
-        #ffn_relu = F.relu(self.ffn_norm(h) - SHIFTED_RELU)
+        # h = x + self.attention.forward(attn_relu, freqs_cos, freqs_sin)
+        h = torch.utils.checkpoint.checkpoint(torch.add, x, self.attention.forward(attn_relu, freqs_cos, freqs_sin), use_reentrant=True)
+        h.requires_grad_(True)
+        # ffn_relu = F.relu(self.ffn_norm(h))
         ffn_relu = self.ffn_norm(h)
-        out = h + self.feed_forward.forward(ffn_relu)
+        # out = h + self.feed_forward.forward(ffn_relu)
+        out = torch.utils.checkpoint.checkpoint(torch.add, h, self.feed_forward.forward(ffn_relu), use_reentrant=True)
+        out.requires_grad_(True)
 
         self.attn_stats = (self.attn_stats * (self.attn_count/(self.attn_count+1))) + \
                             (torch.count_nonzero(attn_relu)/np.prod(attn_relu.size()) * (1/(self.attn_count+1)))
@@ -297,12 +302,16 @@ class Transformer(nn.Module):
     def forward(self, tokens: torch.Tensor, targets: Optional[torch.Tensor] = None) -> torch.Tensor:
         _bsz, seqlen = tokens.shape
         h = self.tok_embeddings(tokens)
+        h.requires_grad_(True)
         h = self.dropout(h)
         freqs_cos = self.freqs_cos[:seqlen]
         freqs_sin = self.freqs_sin[:seqlen]
 
         for layer in self.layers:
-            h = layer(h, freqs_cos, freqs_sin)
+            #h = layer(h, freqs_cos, freqs_sin)
+            # gradient checkpoint enabled
+            h = torch.utils.checkpoint.checkpoint(layer, h, freqs_cos, freqs_sin, use_reentrant=True)
+            h.requires_grad_(True)
         h = self.norm(h)
 
         if targets is not None:
@@ -338,6 +347,7 @@ class Transformer(nn.Module):
         use_fused = fused_available and device_type == 'cuda'
         extra_args = dict(fused=True) if use_fused else dict()
         optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas, **extra_args)
+        #optimizer = bnb.optim.Adam8bit(optim_groups, lr=learning_rate, betas=betas)
         print(f"using fused AdamW: {use_fused}")
 
         return optimizer
@@ -387,8 +397,9 @@ class Transformer(nn.Module):
                 idx_next = torch.multinomial(probs, num_samples=1)
             # append sampled index to the running sequence and continue
             idx = torch.cat((idx, idx_next), dim=1)
-            print(idx)
-            if enc is not None:
-                print(enc.decode(idx[0].tolist()))
+            #print(idx)
+
+        #if enc is not None:
+        #    print(enc.decode(idx[0].tolist()))
 
         return idx

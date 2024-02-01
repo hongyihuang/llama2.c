@@ -190,7 +190,7 @@ class FeedForward(nn.Module):
         #coverage = torch.count_nonzero(torch.logical_xor(relufied, pred))/np.prod(relufied.size())
         #relufied = pred*relufied
         
-        n=2
+        n=1
         # 64/n, 512, n, 192; context_len/window_len, batch, window_len, hidden_dim
         sample = torch.stack(torch.split(relufied, n, dim=1))
         # 64/n, 512, 192; context_len/window_len, batch, hidden_dim
@@ -228,9 +228,9 @@ class TransformerBlock(nn.Module):
         self.ffn_count = 0
 
     def forward(self, x, freqs_cos, freqs_sin):
-        attn_relu = F.relu(self.attention_norm(x)-1)
+        attn_relu = F.relu(self.attention_norm(x)-1.0)
         h = x + self.attention.forward(attn_relu, freqs_cos, freqs_sin)
-        ffn_relu = F.relu(self.ffn_norm(h)-1)
+        ffn_relu = F.relu(self.ffn_norm(h)-1.0)
         out = h + self.feed_forward.forward(ffn_relu)
 
         self.attn_stats = (self.attn_stats * (self.attn_count/(self.attn_count+1))) + \

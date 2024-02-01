@@ -252,6 +252,25 @@ class Task:
 # -----------------------------------------------------------------------------
 # CLI for constructing the dataset
 
+def stats():
+    bin_dir = os.path.join(DATA_CACHE_DIR, "TinyStories_all_data")
+    shard_filenames = sorted(glob.glob(os.path.join(bin_dir, "*.bin")))
+    filename = shard_filenames[0]
+    m = np.memmap(filename, dtype=np.uint16, mode="r")
+    max_seq_len = 512
+    num_batches = len(m) // max_seq_len
+    num_batches -= 1  # drop the last partial batch
+    assert num_batches > 0, "this shard is way too small? investigate."
+    ixs = list(range(num_batches))
+
+    # train/test split
+    for ix in ixs:
+        start = ix * max_seq_len
+        end = start + max_seq_len + 1
+        # calling .astype will copy the data into a new numpy array, now in RAM
+        chunk = torch.from_numpy((m[start:end]).astype(np.int16))
+        print(f"Number of BOS tokens in a chunk: {torch.sum(chunk==1)}")
+
 if __name__ == "__main__":
     """
     These stages are designed to be run in order.
@@ -266,7 +285,7 @@ if __name__ == "__main__":
     python tinystories.py pretokenize --vocab_size=2048
     """
     parser = argparse.ArgumentParser()
-    parser.add_argument("stage", type=str, choices=["download", "pretokenize", "train_vocab"])
+    parser.add_argument("stage", type=str, choices=["download", "pretokenize", "train_vocab", "stats"])
     parser.add_argument("--vocab_size", type=int, default=0, help="pretokenization vocab size. 0 = use Llama 2 tokenizer.")
     args = parser.parse_args()
 
@@ -277,5 +296,9 @@ if __name__ == "__main__":
         train_vocab(vocab_size=args.vocab_size)
     elif args.stage == "pretokenize":
         pretokenize(vocab_size=args.vocab_size)
+    elif args.stage == "stats":
+        stats()
     else:
         raise ValueError(f"Unknown stage {args.stage}")
+
+    

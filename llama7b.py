@@ -19,7 +19,7 @@ from tinystories import get_tokenizer_model_path
 
 # -----------------------------------------------------------------------------
 checkpoint = 'ckpt.pt' # 'data/ReluLLaMA7B/5of6_fp16.bin'
-model_dir = 'data/ReluLLaMA7B_bf16/'
+model_dir = 'ReluLLaMA-7B/'
 start = "Once upon a time," # or "<|endoftext|>" or etc. Can also specify a file, use as: "FILE:prompt.txt"
 num_samples = 1 # number of samples to draw
 max_new_tokens = 128 # number of tokens generated in each sample
@@ -95,14 +95,15 @@ def remap_names(file):
         model_dict[".".join(split_keys)] = model_dict.pop(k)
 
     return model_dict
-    
+
 dir = os.listdir(model_dir)
 # access all {x}of6_fp16.bin files
 print(dir)
 model_dict = {}
 for file in dir:
-    print("Loading file: ", file)
-    model_dict.update(remap_names(model_dir + file))
+    if file.startswith("pytorch_model-"):
+        print("Loading file: ", file)
+        model_dict.update(remap_names(model_dir + file))
 
 # for k,v in list(model_dict.items()):
 #    print(k, v.shape if isinstance(v, torch.Tensor) else v)
@@ -143,7 +144,7 @@ def sample(prompt=""):
                 print(enc.decode(y[0].tolist()))
                 print('---------------')
 
-#sample(start)
+sample(start)
 
 class LoRALayer(torch.nn.Module):
     def __init__(self, in_dim, out_dim, rank, alpha):
